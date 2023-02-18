@@ -8,10 +8,10 @@
 
 # program : Arthas
 #  author : Core Engine @ Taobao.com
-#    date : 2021-03-09
+#    date : 2022-11-15
 
 # current arthas script version
-ARTHAS_SCRIPT_VERSION=3.5.0
+ARTHAS_SCRIPT_VERSION=3.6.7
 
 # SYNOPSIS
 #   rreadlink <fileOrDirPath>
@@ -83,7 +83,11 @@ DIR=$(dirname -- "$(rreadlink "${BASH_SOURCE[0]}")")
 ARTHAS_HOME=
 
 # define arthas's lib
-ARTHAS_LIB_DIR=${HOME}/.arthas/lib
+if [ -z "${ARTHAS_LIB_DIR}" ]; then
+    ARTHAS_LIB_DIR=${HOME}/.arthas/lib
+else
+    echo "[INFO] ARTHAS_LIB_DIR: ${ARTHAS_LIB_DIR}"
+fi
 
 # target process id to attach
 TARGET_PID=
@@ -151,6 +155,9 @@ USERNAME=
 # password
 PASSWORD=
 
+# disabledCommands
+DISABLED_COMMANDS=
+
 ############ Command Arguments ############
 
 # if arguments contains -c/--command or -f/--batch-file,  BATCH_MODE will be true
@@ -158,9 +165,6 @@ BATCH_MODE=false
 
 # define arthas's temp dir
 TMP_DIR=/tmp
-
-# last update arthas version
-ARTHAS_VERSION=
 
 # arthas remote url
 # https://arthas.aliyun.com/download/3.1.7?mirror=aliyun
@@ -182,7 +186,7 @@ case "$(uname -s)" in
     *)          OS_TYPE="UNKNOWN"
 esac
 
-# check curl/grep/awk/telent/unzip command
+# check curl/grep/awk/telnet/unzip command
 if ! [ -x "$(command -v curl)" ]; then
   echo 'Error: curl is not installed. Try to use java -jar arthas-boot.jar' >&2
   exit 1
@@ -235,6 +239,7 @@ check_permission()
 # reset some options for env
 reset_for_env()
 {
+    unset JAVA_TOOL_OPTIONS
 
     # init ARTHAS' lib
     mkdir -p "${ARTHAS_LIB_DIR}" \
@@ -407,6 +412,7 @@ Usage:
        [--tunnel-server <value>] [--agent-id <value>] [--stat-url <value>]
        [--app-name <value>]
        [--username <value>] [--password <value>]
+       [--disabled-commands <value>]
        [--use-version <value>] [--repo-mirror <value>] [--versions] [--use-http]
        [--attach-only] [-c <value>] [-f <value>] [-v] [pid]
 
@@ -429,6 +435,7 @@ Options and Arguments:
     --app-name                  Special app name
     --username                  Special username
     --password                  Special password
+    --disabled-commands         Disable special commands
     --select                    select target process by classname or JARfilename
  -c,--command <value>           Command to execute, multiple commands separated
                                 by ;
@@ -448,10 +455,11 @@ EXAMPLES:
   ./as.sh --stat-url 'http://192.168.10.11:8080/api/stat'
   ./as.sh -c 'sysprop; thread' <pid>
   ./as.sh -f batch.as <pid>
-  ./as.sh --use-version 3.5.0
+  ./as.sh --use-version 3.6.7
   ./as.sh --session-timeout 3600
   ./as.sh --attach-only
-  ./as.sh --select arthas-demo
+  ./as.sh --disabled-commands stop,dump
+  ./as.sh --select math-game
   ./as.sh --repo-mirror aliyun --use-http
 WIKI:
   https://arthas.aliyun.com/doc
@@ -624,6 +632,11 @@ parse_arguments()
         ;;
         --password)
         PASSWORD="$2"
+        shift # past argument
+        shift # past value
+        ;;
+        --disabled-commands)
+        DISABLED_COMMANDS="$2"
         shift # past argument
         shift # past value
         ;;
@@ -831,9 +844,14 @@ attach_jvm()
         tempArgs+=("${USERNAME}")
     fi
 
-        if [ "${PASSWORD}" ]; then
+    if [ "${PASSWORD}" ]; then
         tempArgs+=("-password")
         tempArgs+=("${PASSWORD}")
+    fi
+
+    if [ "${DISABLED_COMMANDS}" ]; then
+        tempArgs+=("-disabled-commands")
+        tempArgs+=("${DISABLED_COMMANDS}")
     fi
 
     if [ "${TARGET_IP}" ]; then
